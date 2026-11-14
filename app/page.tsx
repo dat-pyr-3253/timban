@@ -8,6 +8,7 @@ type Region = { id: number; name: string };
 
 type Post = {
   id: string;
+  author_id: string;
   title: string;
   description: string | null;
   gender: string | null;
@@ -21,6 +22,8 @@ export default function Home() {
   const [regions, setRegions] = useState<Region[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [regionFilter, setRegionFilter] = useState<number | null>(null);
+  const [tab, setTab] = useState<"all" | "following">("all");
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function Home() {
     supabase
       .from("posts")
       .select(
-        "id, title, description, gender, age, created_at, profiles(display_name), post_regions(region_id, regions(name))"
+        "id, author_id, title, description, gender, age, created_at, profiles(display_name), post_regions(region_id, regions(name))"
       )
       .order("created_at", { ascending: false })
       .limit(50)
@@ -41,11 +44,25 @@ export default function Home() {
         if (error) setError(error.message);
         else setPosts((data ?? []) as unknown as Post[]);
       });
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) return;
+      supabase
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id", data.user.id)
+        .then(({ data: rows }) =>
+          setFollowingIds((rows ?? []).map((r) => r.following_id))
+        );
+    });
   }, []);
 
-  const shown = regionFilter
-    ? posts.filter((p) => p.post_regions.some((pr) => pr.region_id === regionFilter))
-    : posts;
+  const shown = posts
+    .filter((p) => tab === "all" || followingIds.includes(p.author_id))
+    .filter(
+      (p) =>
+        !regionFilter || p.post_regions.some((pr) => pr.region_id === regionFilter)
+    );
 
   return (
     <main className="mx-auto max-w-2xl p-8">
@@ -57,12 +74,27 @@ export default function Home() {
         </div>
       </div>
 
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => setTab("all")}
+          className={`rounded border px-3 py-1 ${tab === "all" ? "bg-black text-white" : ""}`}
+        >
+          Tất cả
+        </button>
+        <button
+          onClick={() => setTab("following")}
+          className={`rounded border px-3 py-1 ${tab === "following" ? "bg-black text-white" : ""}`}
+        >
+          Đã quan tâm
+        </button>
+      </div>
+
       <div className="mb-4 flex flex-wrap gap-2">
         <button
           onClick={() => setRegionFilter(null)}
           className={`rounded border px-3 py-1 ${regionFilter === null ? "bg-black text-white" : ""}`}
         >
-          Tất cả
+          Mọi khu vực
         </button>
         {regions.map((r) => (
           <button
@@ -80,14 +112,14 @@ export default function Home() {
 
       <div className="flex flex-col gap-3">
         {shown.map((p) => (
-          <article key={p.id} className="rounded border p-4">
+          <Link key={p.id} href={`/tin/${p.id}`} className="block rounded border p-4">
             <h2 className="text-lg font-semibold">{p.title}</h2>
             <p className="text-sm text-gray-600">
               {p.profiles?.display_name} · {p.gender === "male" ? "Nam" : "Nữ"} · {p.age} tuổi ·{" "}
               {p.post_regions.map((pr) => pr.regions?.name).join(", ")}
             </p>
             {p.description && <p className="mt-2">{p.description}</p>}
-          </article>
+          </Link>
         ))}
       </div>
     </main>
